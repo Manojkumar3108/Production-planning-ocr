@@ -1,5 +1,4 @@
-SANDMAN BOARD/PLAN EXTRACTION API - DEPLOYMENT PACKAGE
-=======================================================
+EXTRACTION API - DEPLOYMENT
 
 CONTENTS
 --------
