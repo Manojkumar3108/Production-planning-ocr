@@ -3,9 +3,9 @@ EXTRACTION API - DEPLOYMENT
 CONTENTS
 --------
 config.py                   All settings (THE ONLY FILE YOU EDIT)
-gemini_board_extractor.py   Gemini vision extraction + fuzzy matching library
+board_extractor.py   Gemini vision extraction + fuzzy matching library
                             (also runs standalone on a folder/single image)
-sandman_extraction_api.py   REST API for Sandman (port 8077)
+extraction_api.py   REST API for Sandman (port 8077)
 requirements.txt            Python dependencies
 
 NOT included (bring your own): the component master Excel
@@ -48,7 +48,7 @@ pushes the master from its database:
 --------------------------------------
 1. Start the API:
      cd D:\sandman_api
-     python sandman_extraction_api.py
+     python extraction_api.py
    Expect: "Uvicorn running on http://0.0.0.0:8077". Leave the window open.
 
 2. Health check -- browser: http://localhost:8077/health
@@ -87,7 +87,7 @@ pushes the master from its database:
    and the three Total ... Weight (Kg) columns.
 
 7. Standalone batch (optional): set IMAGES_FOLDER in config.py to a folder
-   or a single image, then:  python gemini_board_extractor.py
+   or a single image, then:  python board_extractor.py
    Output: Matched_Components_ALL.json
    [{"order_no", "extracted_name", "matches":[{"name","score"}], "box"}]
 
@@ -119,7 +119,7 @@ pushes the master from its database:
   the living contract.
 - Windows Firewall will prompt to allow Python on the first external
   request -- allow it.
-- Before production: tighten CORS allow_origins in sandman_extraction_api.py
+- Before production: tighten CORS allow_origins in .py
   to the Sandman host, and run the API as a service (NSSM) so it survives
   reboots.
 
