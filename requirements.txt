@@ -1,0 +1,28 @@
+# ============================================================
+# Sandman board-extraction requirements
+# Install:  pip install -r requirements.txt
+# ============================================================
+
+# --- Gemini extraction (gemini_board_extractor.py) ---
+google-generativeai>=0.8
+pillow>=10.0
+pandas>=2.0
+rapidfuzz>=3.0
+openpyxl>=3.1
+
+# --- REST API for Sandman (sandman_extraction_api.py) ---
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+
+# ============================================================
+# OPTIONAL: local offline OCR fallback (batch_ocr_component_matcher.py
+# with EXTRACTION_BACKEND="local"). Not needed for the Gemini-only setup.
+# Uncomment to install. NOTE: paddlepaddle 2.6.2 requires protobuf<=3.20.2
+# -- if you install these into the same environment as google-generativeai
+# and imports start failing, run:  pip install protobuf==3.20.2
+# ============================================================
+# paddlepaddle==2.6.2
+# paddleocr==2.8.1
+# opencv-contrib-python
+# easyocr
