@@ -46,7 +46,6 @@ pushes the master from its database:
   /process-plan?include_details=true weight totals.
 
 
-HANDING TO KARTHICK
 --------------------------------------
 1. Start the API:
      cd D:\sandman_api
@@ -114,7 +113,7 @@ pushes the master from its database:
   /process-plan?include_details=true weight totals.
 
 
-HANDING TO KARTHICK
+
 -------------------
 - Sandman calls http://<this-machine-ip>:8077/extract (multipart, field
   "file") and /process-plan (JSON). The interactive docs page at /docs is
