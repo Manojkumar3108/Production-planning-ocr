@@ -8,7 +8,8 @@ so deployments can override without editing files.
 """
 
 import os
-
+from dotenv import load_dotenv
+load_dotenv()
 # ===========================================================
 # PATHS
 # ===========================================================
@@ -38,16 +39,9 @@ GEMINI_MODEL = os.environ.get("SANDMAN_GEMINI_MODEL", "gemini-3-flash-preview")
 
 # API keys, comma-separated. Env var SANDMAN_GEMINI_KEYS overrides.
 # NOTE: these default keys have circulated in shared script files --
-# regenerate them in Google AI Studio and update here or in the env var.
-_DEFAULT_KEYS = (
-    "AIzaSyDPpLfLCBXctDvY_3ODs3vCKGL303uesKA,"
-    "AIzaSyBLVTtNVJgkS5Y4hLlPK_hN3sNwKXSa8qo,"
-    "AIzaSyDkVAIg7UtwxWR1uN0v7nucWPr903Um-Q4,"
-    "AIzaSyBCr_UMndcIV02qfncjpbC-ZKaJHwb3LFM,"
-    "AIzaSyC1eqXXPBIYsyd9nYeWYRFDF-Gd8EyaNDU"
-)
+
 API_KEYS = [k.strip() for k in
-            os.environ.get("SANDMAN_GEMINI_KEYS", _DEFAULT_KEYS).split(",")
+            os.environ.get("SANDMAN_GEMINI_KEYS","").split(",")
             if k.strip()]
 
 # ===========================================================
