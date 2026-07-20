@@ -3,7 +3,7 @@ Sandman unified extraction API.
 
 One upload endpoint behind the Sandman "upload production plan" UI:
   - IMAGE upload (.png/.jpg/.jpeg/.webp/.bmp)  -> Gemini vision reads the
-    handwritten board (gemini_board_extractor.py, same folder).
+    handwritten board (board_extractor.py, same folder).
   - SPREADSHEET upload (.xlsx/.xls/.csv)       -> work-order parser adapted
     from the plan-processing script (multi-level headers, GPI code / fuzzy
     name resolution).
@@ -36,7 +36,7 @@ Deps: pip install fastapi uvicorn python-multipart google-generativeai \
                   pillow pandas rapidfuzz openpyxl
 Run:  python sandman_extraction_api.py            (port 8077)
 
-gemini_board_extractor.py and the component master Excel must sit in the
+board_extractor.py and the component master Excel must sit in the
 same folder.
 """
 
@@ -207,10 +207,11 @@ def _find_columns(df):
         "boxes": pick("BOX", exclude=("GCW", "KG", "WEIGHT")),
     }
 
-def _extract_start_date(raw_columns):
-    """main.py's extract_start_date_from_plan: scan the raw (pre-clean)
-    multi-level header tuples for 'DD/DD(.../DD).MM.YYYY' and return the
-    FIRST day mentioned, as an ISO date string. None if absent."""
+def _extract_header_dates(raw_columns):
+    """Scan the raw (pre-clean) multi-level header tuples for
+    'DD/DD(/DD).MM.YYYY' and return ALL days mentioned as a list of date
+    objects, in the order listed (e.g. "14/15.07.2026" -> [14th, 15th];
+    "14/15/16.07.2026" -> [14th, 15th, 16th]). None if no such header."""
     from datetime import date
     for col_tuple in raw_columns:
         cells = col_tuple if isinstance(col_tuple, tuple) else (col_tuple,)
@@ -219,14 +220,19 @@ def _extract_start_date(raw_columns):
                 m = DATE_HEADER_PATTERN.match(str(c).strip())
                 if m:
                     days_part, month_str, year_str = m.groups()
-                    first_day = int(days_part.split("/")[0])
-                    return date(int(year_str), int(month_str), first_day).isoformat()
+                    year, month = int(year_str), int(month_str)
+                    return [date(year, month, int(d)) for d in days_part.split("/")]
     return None
+
+def _extract_start_date(raw_columns):
+    """Convenience wrapper: first header date as an ISO string, or None."""
+    dates = _extract_header_dates(raw_columns)
+    return dates[0].isoformat() if dates else None
 
 def extract_from_spreadsheet(tmp_path, filename):
     ext = os.path.splitext(filename)[1].lower()
     df = None
-    plan_start_date = None
+    header_dates = None
     if ext == ".csv":
         df = pd.read_csv(tmp_path)
     else:
@@ -235,7 +241,7 @@ def extract_from_spreadsheet(tmp_path, filename):
         # multi-header parse doesn't yield the expected columns.
         try:
             raw = pd.read_excel(tmp_path, skiprows=2, header=[0, 1, 2])
-            plan_start_date = _extract_start_date(raw.columns)
+            header_dates = _extract_header_dates(raw.columns)
             raw.columns = [_clean_col(c) for c in raw.columns]
             raw = raw.dropna(axis=1, how="all")
             if _find_columns(raw)["items"]:
@@ -297,7 +303,7 @@ def extract_from_spreadsheet(tmp_path, filename):
             "boxes": as_str(boxes_val),
             "matches": matches[:gbe.MATCH_LIMIT],
         })
-    return rows, plan_start_date
+    return rows, (header_dates[0].isoformat() if header_dates else None), header_dates
 
 # ===========================================================
 # ENDPOINTS
@@ -368,7 +374,7 @@ async def extract(file: UploadFile = File(...)):
             if file_type == "image":
                 rows = extract_from_image(tmp.name, file.filename)
             else:
-                rows, plan_start_date = extract_from_spreadsheet(tmp.name, file.filename)
+                rows, plan_start_date, header_dates = extract_from_spreadsheet(tmp.name, file.filename)
         except HTTPException:
             raise
         except Exception as e:
@@ -418,7 +424,9 @@ async def extract(file: UploadFile = File(...)):
 
     binned = _split_into_bins(base_rows, BIN_SIZE)
     num_bins = max(r["Bin"] for r in binned)
-    seq = _build_shift_date_sequence(start, num_bins)
+    # 2 header dates -> standard full-cycle-per-day; 3 header dates ->
+    # one-shift-per-day-then-pile-onto-last-date (see _build_sequence_for)
+    seq = _build_sequence_for(header_dates, start, num_bins)
 
     simple_rows = []
     bin_counters = {}
@@ -500,7 +508,8 @@ def _split_into_bins(rows, bin_size):
 
 def _build_shift_date_sequence(start_date, num_bins):
     """main.py's build_shift_date_sequence: first bin is Shift 3 on the
-    start date, then 1/2/3 for each following day."""
+    start date, then 1/2/3 for each following day. Used when the plan
+    header lists exactly 2 dates."""
     rows = []
     current_date = start_date
     shift_value = 1
@@ -517,6 +526,53 @@ def _build_shift_date_sequence(start_date, num_bins):
             shift_value += 1
         current_date += _timedelta(days=1)
     return {r["Shift_Value"]: r for r in rows}
+
+def _build_shift_date_sequence_3day(header_dates, num_bins):
+    """Used when the plan header lists exactly 3 dates (e.g.
+    '14/15/16.07.2026'): the first date is always Shift 3; each subsequent
+    header date gets exactly one shift (Shift 1) in a first pass; any
+    further bins pile onto the LAST header date (Shift 2, then Shift 3);
+    any bins beyond that continue past the last header date using the
+    normal full-cycle-per-day logic."""
+    rows = []
+    shift_value = 1
+    rows.append({"Shift": "3", "Date": header_dates[0].strftime("%d-%m-%Y"),
+                 "Shift_Value": shift_value})
+    shift_value += 1
+    for d in header_dates[1:]:
+        if len(rows) >= num_bins:
+            break
+        rows.append({"Shift": "1", "Date": d.strftime("%d-%m-%Y"),
+                     "Shift_Value": shift_value})
+        shift_value += 1
+    last_date = header_dates[-1]
+    for s in ["2", "3"]:
+        if len(rows) >= num_bins:
+            break
+        rows.append({"Shift": s, "Date": last_date.strftime("%d-%m-%Y"),
+                     "Shift_Value": shift_value})
+        shift_value += 1
+    current_date = last_date + _timedelta(days=1)
+    while len(rows) < num_bins:
+        for s in ["1", "2", "3"]:
+            if len(rows) >= num_bins:
+                break
+            rows.append({"Shift": s, "Date": current_date.strftime("%d-%m-%Y"),
+                         "Shift_Value": shift_value})
+            shift_value += 1
+        current_date += _timedelta(days=1)
+    return {r["Shift_Value"]: r for r in rows}
+
+def _build_sequence_for(header_dates, start_date, num_bins):
+    """Picks the right sequence logic based on how many dates the plan
+    header actually lists: 2 dates -> standard full-cycle-per-day;
+    3 dates -> one-shift-per-day-then-pile-onto-last-date. Falls back to
+    the standard logic when header_dates is unavailable (e.g. the
+    /process-plan endpoint, which only receives a single start_date with
+    no header context -- images have no such header at all)."""
+    if header_dates and len(header_dates) == 3:
+        return _build_shift_date_sequence_3day(header_dates, num_bins)
+    return _build_shift_date_sequence(start_date, num_bins)
 
 @app.post("/process-plan")
 def process_plan(req: ProcessPlanRequest, include_details: bool = False):
