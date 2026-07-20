@@ -263,6 +263,13 @@ def extract_from_spreadsheet(tmp_path, filename):
     if gpi_c:
         df = df[~(df[items_c].astype(str).str.strip().eq("") &
                   df[gpi_c].isna())]
+    # Trailing note/comment rows (e.g. "LAST UPDATE-...", "COPE MOLD FALL
+    # PROBLEM") have real text in ITEMS but neither a GPI code nor a BOX
+    # value -- that combination means it isn't an actual plan line, so
+    # drop it here rather than letting it surface as a spurious
+    # "BOX not numeric" skipped row later.
+    if gpi_c and boxes_c:
+        df = df[~(df[gpi_c].isna() & df[boxes_c].isna())]
 
     rows = []
     seq = 0
