@@ -380,6 +380,14 @@ def push_master(payload: MasterPush):
     } for r in payload.rows])
     _build_master(df, "db_push")
     return {"status": "ok", "master_rows": len(df), "master_source": "db_push"}
+  
+@app.post("/master/refresh-from-db")
+def refresh_master_from_db():
+    """Re-query the master directly from MySQL... without restarting the service."""
+    ok = _load_master_from_db()
+    if not ok:
+        raise HTTPException(503, "Could not load master from the database...")
+    return {"status": "ok", "master_rows": len(_master), "master_source": _master_source}
 
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
