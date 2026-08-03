@@ -114,7 +114,36 @@ def _load_master_from_excel():
     m = m.rename(columns={gbe.COMPONENT_COLUMN: "Component Name"})
     _build_master(m, "excel")
 
-_load_master_from_excel()
+def _load_master_from_db():
+    """Query the component master directly from Sandman's MySQL database..."""
+    from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_TABLE, DB_COLUMN_MAP
+    if not DB_HOST:
+        return False
+    try:
+        from sqlalchemy import create_engine, text
+    except ImportError:
+        print("NOTE: DB_HOST is set but sqlalchemy/pymysql aren't installed...")
+        return False
+    try:
+        url = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        engine = create_engine(url, pool_pre_ping=True)
+        cols_sql = ", ".join(f"`{db_col}` AS `{canon}`" for canon, db_col in DB_COLUMN_MAP.items())
+        query = text(f"SELECT {cols_sql} FROM `{DB_TABLE}`")
+        with engine.connect() as conn:
+            df = pd.read_sql(query, conn)
+        df = df.rename(columns={...})  # DB column names -> canonical names
+        if df.empty:
+            print(f"NOTE: DB query returned 0 rows...")
+            return False
+        _build_master(df, "db_pull")
+        print(f"Loaded {len(df)} components from MySQL...")
+        return True
+    except Exception as e:
+        print(f"NOTE: could not load master from MySQL ({e}) -- falling back.")
+        return False
+
+if not _load_master_from_db():
+    _load_master_from_excel()
 
 def _require_master():
     if _master is None or len(_master) == 0:
