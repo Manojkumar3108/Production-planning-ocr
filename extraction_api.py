@@ -131,7 +131,13 @@ def _load_master_from_db():
         query = text(f"SELECT {cols_sql} FROM `{DB_TABLE}`")
         with engine.connect() as conn:
             df = pd.read_sql(query, conn)
-        df = df.rename(columns={...})  # DB column names -> canonical names
+        df = df.rename(columns={
+          "component_id": "Component ID",
+          "component_name": "Component Name",
+          "bunch_weight": "Bunch Weight (Kg)",
+          "core_weight": "Core Weight (Kg)",
+          "sand_weight": "Sand Weight (Kg)",
+      })
         if df.empty:
             print(f"NOTE: DB query returned 0 rows...")
             return False
