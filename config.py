@@ -13,7 +13,25 @@ load_dotenv()
 # ===========================================================
 # PATHS
 # ===========================================================
+DB_HOST = os.environ.get("SANDMAN_DB_HOST", "")       # empty -- fill in via .env
+DB_PORT = int(os.environ.get("SANDMAN_DB_PORT", "3306"))
+DB_NAME = os.environ.get("SANDMAN_DB_NAME", "gpi_scada")
+DB_USER = os.environ.get("SANDMAN_DB_USER", "")
+DB_PASSWORD = os.environ.get("SANDMAN_DB_PASSWORD", "")
 
+DB_TABLE = "components_copy"
+
+DB_COLUMN_MAP = {
+    "component_id":   "component_id",
+    "component_name": "component_name",
+    "bunch_weight":   "bunch_weight",
+    "core_weight":    "core_weight",
+    "sand_weight":    "sand_weight",
+}
+
+# Auto-refresh: re-query the master from MySQL on this schedule. Minutes;
+# 0 disables it (refresh only at startup / manual POST /master/refresh-from-db).
+DB_REFRESH_INTERVAL_MINUTES = int(os.environ.get("SANDMAN_DB_REFRESH_MINUTES", "60"))
 # Board photos to process when running gemini_board_extractor.py directly
 # as a batch script. Can be a FOLDER (all images inside are processed) or a
 # SINGLE image file (e.g. r"D:\GPI OCR\Images\board1.jpg").
