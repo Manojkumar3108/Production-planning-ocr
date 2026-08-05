@@ -43,7 +43,7 @@ same folder.
 import os
 import re
 import tempfile
-
+from urllib.parse import quote_plus
 import pandas as pd
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,7 +125,7 @@ def _load_master_from_db():
         print("NOTE: DB_HOST is set but sqlalchemy/pymysql aren't installed...")
         return False
     try:
-        url = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        url = f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
         engine = create_engine(url, pool_pre_ping=True)
         cols_sql = ", ".join(f"`{db_col}` AS `{canon}`" for canon, db_col in DB_COLUMN_MAP.items())
         query = text(f"SELECT {cols_sql} FROM `{DB_TABLE}`")
