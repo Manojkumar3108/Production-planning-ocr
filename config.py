@@ -19,7 +19,7 @@ DB_NAME = os.environ.get("SANDMAN_DB_NAME", "gpi_scada")
 DB_USER = os.environ.get("SANDMAN_DB_USER", "")
 DB_PASSWORD = os.environ.get("SANDMAN_DB_PASSWORD", "")
 
-DB_TABLE = "components_copy"
+DB_TABLE = "components"
 
 DB_COLUMN_MAP = {
     "component_id":   "component_id",
