@@ -11,13 +11,44 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 # ===========================================================
-# PATHS
+# DATABASE -- same three environments as DB Acess/config.py
+# (DevelopmentConfig / StgConfig / ProductionConfig), selected here by
+# SANDMAN_DB_ENV instead of Flask's APP_SETTINGS. Defaults to production,
+# the RDS instance this service has been pointed at.
 # ===========================================================
-DB_HOST = os.environ.get("SANDMAN_DB_HOST", "")       # empty -- fill in via .env
-DB_PORT = int(os.environ.get("SANDMAN_DB_PORT", "3306"))
-DB_NAME = os.environ.get("SANDMAN_DB_NAME", "gpi_scada")
-DB_USER = os.environ.get("SANDMAN_DB_USER", "")
-DB_PASSWORD = os.environ.get("SANDMAN_DB_PASSWORD", "")
+DB_ENVIRONMENTS = {
+    "development": {
+        "host": "localhost",
+        "port": 3307,
+        "name": "sandman_dev",
+        "user": "root",
+        "password": "sandman",
+    },
+    "staging": {
+        "host": "127.0.0.1",
+        "port": 3306,
+        "name": "sandman_dev",
+        "user": "root",
+        "password": "S@ndm@Ndb_2020&stg",
+    },
+    "production": {
+        "host": "sandman.cjmg6ek4cf9c.ap-south-1.rds.amazonaws.com",
+        "port": 43306,
+        "name": "sandman_dev",
+        "user": "admin",
+        "password": "$anDman!2025&",
+    },
+}
+
+# Switch environments by changing this value directly.
+_db_env = "development"
+_db_cfg = DB_ENVIRONMENTS[_db_env]
+
+DB_HOST = _db_cfg["host"]
+DB_PORT = _db_cfg["port"]
+DB_NAME = _db_cfg["name"]
+DB_USER = _db_cfg["user"]
+DB_PASSWORD = _db_cfg["password"]
 
 DB_TABLE = "components"
 
