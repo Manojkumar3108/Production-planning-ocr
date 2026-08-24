@@ -42,10 +42,11 @@ same folder.
 
 import os
 import re
+import json
 import tempfile
 from urllib.parse import quote_plus
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from rapidfuzz import process
 from pydantic import BaseModel
@@ -114,19 +115,65 @@ def _load_master_from_excel():
     m = m.rename(columns={gbe.COMPONENT_COLUMN: "Component Name"})
     _build_master(m, "excel")
 
-def _load_master_from_db():
-    """Query the component master directly from Sandman's MySQL database..."""
-    from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_TABLE, DB_COLUMN_MAP
+def _lookup_customer_engine(customer_id):
+    """Multi-tenant lookup, same shape as DB Acess/helpers.py
+    prepare_custom_engine(): the `customers` table (real column is `pkey`,
+    not `id`) lives in the main DB (config.py's connection) and has a
+    `db_properties` text column holding JSON of {"url", "username",
+    "password"} for that customer's own database. `url` is a JDBC-style
+    string (e.g. "jdbc:mysql://host:port/dbname?useSSL=false&...") --
+    strip the scheme and any query string before rebuilding it as a
+    SQLAlchemy URL. Returns None if the customer isn't found or has no
+    db_properties set."""
+    from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
     if not DB_HOST:
-        return False
+        return None
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import NullPool
+    admin_url = f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    admin_engine = create_engine(admin_url, pool_pre_ping=True, pool_recycle=3600, poolclass=NullPool)
+    with admin_engine.connect() as conn:
+        row = conn.execute(text("SELECT db_properties FROM customers WHERE pkey = :pkey"),
+                            {"pkey": customer_id}).fetchone()
+    if row is None or row[0] is None:
+        return None
+    db_settings = json.loads(row[0])
+    after_scheme = db_settings["url"].split("://", 1)[1]   # "host:port/dbname?query..."
+    host_port, _, db_and_query = after_scheme.partition("/")
+    tenant_db_name = db_and_query.split("?", 1)[0]
+    tenant_url = (f"mysql+pymysql://{db_settings['username']}:"
+                  f"{quote_plus(db_settings['password'])}@{host_port}/{tenant_db_name}")
+    return create_engine(tenant_url, pool_pre_ping=True, pool_recycle=3600, poolclass=NullPool)
+
+def _load_master_from_db(customer_id=None):
+    """Query the component master directly from MySQL. With no customer_id,
+    uses the fixed DB in config.py; with one, switches to that customer's
+    own database via _lookup_customer_engine (same per-request tenant
+    switching as DB Acess/helpers.py prepare_custom_engine)."""
+    from config import DB_HOST, DB_TABLE, DB_COLUMN_MAP
     try:
         from sqlalchemy import create_engine, text
+        from sqlalchemy.pool import NullPool
     except ImportError:
-        print("NOTE: DB_HOST is set but sqlalchemy/pymysql aren't installed...")
+        print("NOTE: sqlalchemy/pymysql aren't installed...")
         return False
     try:
-        url = f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        engine = create_engine(url, pool_pre_ping=True)
+        if customer_id is not None:
+            engine = _lookup_customer_engine(customer_id)
+            if engine is None:
+                print(f"NOTE: no customer found for id={customer_id!r}")
+                return False
+        else:
+            if not DB_HOST:
+                return False
+            from config import DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+            url = f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+            # Same engine settings as DB Acess/helpers.py construct_engine():
+            # pool_pre_ping catches a dead connection before it's used instead
+            # of failing the request, pool_recycle avoids outliving the RDS
+            # idle timeout, NullPool since this connection isn't kept warm
+            # per-request.
+            engine = create_engine(url, pool_pre_ping=True, pool_recycle=3600, poolclass=NullPool)
         cols_sql = ", ".join(f"`{db_col}` AS `{canon}`" for canon, db_col in DB_COLUMN_MAP.items())
         query = text(f"SELECT {cols_sql} FROM `{DB_TABLE}`")
         with engine.connect() as conn:
@@ -388,12 +435,22 @@ def push_master(payload: MasterPush):
     return {"status": "ok", "master_rows": len(df), "master_source": "db_push"}
   
 @app.post("/master/refresh-from-db")
-def refresh_master_from_db():
-    """Re-query the master directly from MySQL... without restarting the service."""
-    ok = _load_master_from_db()
+def refresh_master_from_db(customer: str = Form(None)):
+    """Re-query the master directly from MySQL, without restarting the
+    service. Same receiving style as DB Acess/helpers.py
+    prepare_custom_engine() for a POST request: customer id comes from a
+    form field (application/x-www-form-urlencoded body), not the query
+    string. Pass it to load that customer's own database instead of the
+    default one in config.py (looked up via the `customers` table's
+    db_properties column)."""
+    print(f"DEBUG: /master/refresh-from-db received customer form field = {customer!r}")
+    ok = _load_master_from_db(customer_id=customer)
     if not ok:
-        raise HTTPException(503, "Could not load master from the database...")
-    return {"status": "ok", "master_rows": len(_master), "master_source": _master_source}
+        detail = (f"Could not load master for customer={customer!r}." if customer
+                  else "Could not load master from the database...")
+        raise HTTPException(503, detail)
+    return {"status": "ok", "master_rows": len(_master), "master_source": _master_source,
+            "customer": customer}
 
 @app.post("/extract")
 async def extract(file: UploadFile = File(...)):
